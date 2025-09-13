@@ -12,12 +12,12 @@ sys.path.insert(0, parent_dir)
 
 # Intentar diferentes rutas de importación
 try:
-    from lib.auth import login_form, has_permission
+    from lib.auth import login_form, has_permission, register_user
     from lib.sp_wrappers import kpis
     from lib.db import query
 except ImportError:
     try:
-        from app.lib.auth import login_form, has_permission
+        from app.lib.auth import login_form, has_permission, register_user
         from app.lib.sp_wrappers import kpis
         from app.lib.db import query
     except ImportError:
@@ -27,6 +27,7 @@ except ImportError:
             import lib.db as db
             login_form = auth.login_form
             has_permission = auth.has_permission
+            register_user = getattr(auth, 'register_user', None)
             kpis = sp.kpis
             query = db.query
         except ImportError as e:
@@ -36,10 +37,128 @@ except ImportError:
 
 st.set_page_config(page_title="Gym Manager", page_icon="🏋️", layout="wide")
 
+# Función de registro personalizada
+def registro_form():
+    st.subheader("📝 Registro de Nuevo Usuario")
+    
+    with st.form("registro_form"):
+        st.write("Completa los siguientes datos para crear tu cuenta:")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            nombre = st.text_input("Nombre completo *", placeholder="Ej: Juan Pérez")
+            email = st.text_input("Email *", placeholder="juan@ejemplo.com")
+            telefono = st.text_input("Teléfono", placeholder="999 888 777")
+            
+        with col2:
+            documento = st.text_input("DNI/Documento *", placeholder="12345678")
+            password = st.text_input("Contraseña *", type="password", placeholder="Mínimo 6 caracteres")
+            password_confirm = st.text_input("Confirmar Contraseña *", type="password")
+        
+        fecha_nacimiento = st.date_input(
+            "Fecha de Nacimiento", 
+            value=datetime.now() - timedelta(days=365*25),
+            max_value=datetime.now().date()
+        )
+        
+        # Información adicional
+        st.write("**Información Adicional (Opcional)**")
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            direccion = st.text_area("Dirección", placeholder="Av. Principal 123, Lima")
+            
+        with col4:
+            contacto_emergencia = st.text_input("Contacto de Emergencia", placeholder="Nombre - Teléfono")
+        
+        # Términos y condiciones
+        acepta_terminos = st.checkbox("He leído y acepto los términos y condiciones *")
+        acepta_marketing = st.checkbox("Acepto recibir información promocional (opcional)")
+        
+        submitted = st.form_submit_button("🚀 Registrarse", type="primary", use_container_width=True)
+        
+        if submitted:
+            # Validaciones
+            errores = []
+            
+            if not nombre.strip():
+                errores.append("El nombre es obligatorio")
+            if not email.strip():
+                errores.append("El email es obligatorio")
+            elif "@" not in email:
+                errores.append("Email inválido")
+            if not documento.strip():
+                errores.append("El documento es obligatorio")
+            if not password:
+                errores.append("La contraseña es obligatoria")
+            elif len(password) < 6:
+                errores.append("La contraseña debe tener al menos 6 caracteres")
+            if password != password_confirm:
+                errores.append("Las contraseñas no coinciden")
+            if not acepta_terminos:
+                errores.append("Debes aceptar los términos y condiciones")
+            
+            if errores:
+                for error in errores:
+                    st.error(f"❌ {error}")
+            else:
+                try:
+                    # Verificar si el email ya existe
+                    existing_user = query("SELECT id FROM auth_user WHERE email = %s", (email,))
+                    if existing_user:
+                        st.error("❌ Ya existe un usuario con este email")
+                        return
+                    
+                    # Registrar nuevo usuario
+                    if register_user:
+                        # Si tenemos función de registro personalizada
+                        result = register_user(
+                            email=email,
+                            password=password,
+                            nombre=nombre,
+                            telefono=telefono,
+                            documento=documento,
+                            fecha_nacimiento=fecha_nacimiento,
+                            direccion=direccion,
+                            contacto_emergencia=contacto_emergencia,
+                            acepta_marketing=acepta_marketing
+                        )
+                        if result.get("success"):
+                            st.success("✅ Usuario registrado exitosamente")
+                            st.info("🔐 Ahora puedes iniciar sesión con tu email y contraseña")
+                            st.session_state["show_login"] = True
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Error en el registro: {result.get('message', 'Error desconocido')}")
+                    else:
+                        # Registro manual en base de datos
+                        import hashlib
+                        password_hash = hashlib.sha256(password.encode()).hexdigest()
+                        
+                        # Insertar usuario
+                        query("""
+                            INSERT INTO auth_user (email, password, nombre, telefono, documento, 
+                                                 fecha_nacimiento, direccion, contacto_emergencia, 
+                                                 acepta_marketing, rol, estado, fecha_creacion)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'socio', 'activo', NOW())
+                        """, (
+                            email, password_hash, nombre, telefono, documento,
+                            fecha_nacimiento, direccion, contacto_emergencia, acepta_marketing
+                        ))
+                        
+                        st.success("✅ Usuario registrado exitosamente")
+                        st.info("🔐 Ahora puedes iniciar sesión con tu email y contraseña")
+                        st.session_state["show_login"] = True
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"❌ Error al registrar usuario: {e}")
+
 # Header
 left, right = st.columns([0.8, 0.2])
 with left:
-    st.title("🏋️ Gym Manager — Dashboard")
+    st.title("🏋️ Gym Manager — Sistema de Gestión")
 with right:
     if st.session_state.get("user"):
         if st.button("🚪 Salir", type="primary", help="Cerrar sesión"):
@@ -52,13 +171,52 @@ with right:
             st.success("Sesión cerrada.")
             st.rerun()
 
-# Si no hay sesión: muestra login
+# Control de vistas
 if not st.session_state.get("user"):
-    login_form()
+    # Usuario no autenticado - mostrar opciones de login/registro
+    
+    # Pestañas para Login y Registro
+    tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
+    
+    with tab_login:
+        st.header("Acceso al Sistema")
+        login_form()
+        
+        # Información adicional para el login
+        st.divider()
+        st.info("""
+        **👥 Tipos de Usuario:**
+        - **Administrador**: Acceso completo al sistema
+        - **Recepcionista**: Control de acceso, ventas, reservas
+        - **Entrenador**: Gestión de clases y entrenamientos
+        - **Socio**: Reservas de clases y consulta de información personal
+        """)
+    
+    with tab_register:
+        st.header("Crear Nueva Cuenta")
+        
+        # Información sobre el registro
+        st.info("""
+        **🎯 Beneficios de Registrarse:**
+        - Reserva de clases online
+        - Seguimiento de tu progreso
+        - Historial de pagos y membresías
+        - Notificaciones importantes
+        - Acceso a promociones exclusivas
+        """)
+        
+        registro_form()
+        
+        st.divider()
+        st.caption("""
+        **📋 Nota:** Al registrarte como socio podrás acceder a funciones básicas. 
+        Para roles administrativos (recepcionista, entrenador, etc.), contacta al administrador del gimnasio.
+        """)
+
 else:
-    # Usuario logueado
+    # Usuario autenticado - mostrar dashboard
     u = st.session_state["user"]
-    st.success(f"Hola, {u['email']} ({u['rol']})")
+    st.success(f"Hola, {u['email']} ({u.get('rol', 'usuario')})")
 
     # === KPIs PRINCIPALES ===
     st.header("📊 Resumen Ejecutivo")
@@ -70,9 +228,12 @@ else:
         activas = d.get("membresias_activas", "—")
         accesos_hoy = d.get("accesos_hoy", "—")
     except Exception:
-        socios = query("SELECT COUNT(*) c FROM socio")[0]["c"]
-        activas = query("SELECT COUNT(*) c FROM membresia WHERE estado='activa' AND fecha_fin>=CURRENT_DATE")[0]["c"]
-        accesos_hoy = query("SELECT COUNT(*) c FROM acceso WHERE fecha_entrada::date=CURRENT_DATE")[0]["c"]
+        try:
+            socios = query("SELECT COUNT(*) c FROM socio")[0]["c"]
+            activas = query("SELECT COUNT(*) c FROM membresia WHERE estado='activa' AND fecha_fin>=CURRENT_DATE")[0]["c"]
+            accesos_hoy = query("SELECT COUNT(*) c FROM acceso WHERE fecha_entrada::date=CURRENT_DATE")[0]["c"]
+        except:
+            socios, activas, accesos_hoy = "—", "—", "—"
 
     # KPIs adicionales
     try:
@@ -168,7 +329,7 @@ else:
 
     # Nota sobre navegación
     if modulos_disponibles:
-        st.info("📝 **Nota:** Para acceder a los módulos específicos, navega usando las páginas del sidebar izquierdo. Si encuentras errores de importación, contacta al administrador del sistema.")
+        st.info("📝 **Nota:** Para acceder a los módulos específicos, navega usando las páginas del sidebar izquierdo.")
         
         # Mostrar módulos disponibles como información
         cols = st.columns(3)
