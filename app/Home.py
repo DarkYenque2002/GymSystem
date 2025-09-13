@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import hashlib
 from datetime import datetime, timedelta
 import sys
 import os
@@ -100,12 +101,12 @@ def registro_form():
 
 # Llamada a la función de registro
 registro_form()
-        
-        st.divider()
-        st.caption("""
-        **📋 Nota:** Al registrarte como socio podrás acceder a funciones básicas. 
-        Para roles administrativos (recepcionista, entrenador, etc.), contacta al administrador del gimnasio.
-        """)
+
+st.divider()
+st.caption("""
+**📋 Nota:** Al registrarte como socio podrás acceder a funciones básicas. 
+Para roles administrativos (recepcionista, entrenador, etc.), contacta al administrador del gimnasio.
+""")
 
 else:
     # Usuario autenticado - mostrar dashboard
