@@ -43,61 +43,30 @@ def registro_form():
     
     with st.form("registro_form"):
         st.write("Completa los siguientes datos para crear tu cuenta:")
+
+        email = st.text_input("Email *", placeholder="juan@ejemplo.com")
+        password = st.text_input("Contraseña *", type="password", placeholder="Mínimo 6 caracteres")
+        password_confirm = st.text_input("Confirmar Contraseña *", type="password")
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            nombre = st.text_input("Nombre completo *", placeholder="Ej: Juan Pérez")
-            email = st.text_input("Email *", placeholder="juan@ejemplo.com")
-            telefono = st.text_input("Teléfono", placeholder="999 888 777")
-            
-        with col2:
-            documento = st.text_input("DNI/Documento *", placeholder="12345678")
-            password = st.text_input("Contraseña *", type="password", placeholder="Mínimo 6 caracteres")
-            password_confirm = st.text_input("Confirmar Contraseña *", type="password")
-        
-        fecha_nacimiento = st.date_input(
-            "Fecha de Nacimiento", 
-            value=datetime.now() - timedelta(days=365*25),
-            max_value=datetime.now().date()
-        )
-        
-        # Información adicional
-        st.write("**Información Adicional (Opcional)**")
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            direccion = st.text_area("Dirección", placeholder="Av. Principal 123, Lima")
-            
-        with col4:
-            contacto_emergencia = st.text_input("Contacto de Emergencia", placeholder="Nombre - Teléfono")
-        
-        # Términos y condiciones
-        acepta_terminos = st.checkbox("He leído y acepto los términos y condiciones *")
-        acepta_marketing = st.checkbox("Acepto recibir información promocional (opcional)")
-        
+        rol = st.selectbox("Rol", ["admin", "socio", "recepcionista", "entrenador"], index=1)
+        sede_id = st.number_input("ID de Sede", min_value=1, value=1)
+
         submitted = st.form_submit_button("🚀 Registrarse", type="primary", use_container_width=True)
-        
+
         if submitted:
             # Validaciones
             errores = []
             
-            if not nombre.strip():
-                errores.append("El nombre es obligatorio")
             if not email.strip():
                 errores.append("El email es obligatorio")
             elif "@" not in email:
                 errores.append("Email inválido")
-            if not documento.strip():
-                errores.append("El documento es obligatorio")
             if not password:
                 errores.append("La contraseña es obligatoria")
             elif len(password) < 6:
                 errores.append("La contraseña debe tener al menos 6 caracteres")
             if password != password_confirm:
                 errores.append("Las contraseñas no coinciden")
-            if not acepta_terminos:
-                errores.append("Debes aceptar los términos y condiciones")
             
             if errores:
                 for error in errores:
@@ -110,102 +79,27 @@ def registro_form():
                         st.error("❌ Ya existe un usuario con este email")
                         return
                     
+                    # Hash de la contraseña
+                    password_hash = hashlib.sha256(password.encode()).hexdigest()
+                    
                     # Registrar nuevo usuario
-                    if register_user:
-                        # Si tenemos función de registro personalizada
-                        result = register_user(
-                            email=email,
-                            password=password,
-                            nombre=nombre,
-                            telefono=telefono,
-                            documento=documento,
-                            fecha_nacimiento=fecha_nacimiento,
-                            direccion=direccion,
-                            contacto_emergencia=contacto_emergencia,
-                            acepta_marketing=acepta_marketing
-                        )
-                        if result.get("success"):
-                            st.success("✅ Usuario registrado exitosamente")
-                            st.info("🔐 Ahora puedes iniciar sesión con tu email y contraseña")
-                            st.session_state["show_login"] = True
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Error en el registro: {result.get('message', 'Error desconocido')}")
-                    else:
-                        # Registro manual en base de datos
-                        import hashlib
-                        password_hash = hashlib.sha256(password.encode()).hexdigest()
-                        
-                        # Insertar usuario
-                        query("""
-                            INSERT INTO auth_user (email, password, nombre, telefono, documento, 
-                                                 fecha_nacimiento, direccion, contacto_emergencia, 
-                                                 acepta_marketing, rol, estado, fecha_creacion)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'socio', 'activo', NOW())
-                        """, (
-                            email, password_hash, nombre, telefono, documento,
-                            fecha_nacimiento, direccion, contacto_emergencia, acepta_marketing
-                        ))
-                        
-                        st.success("✅ Usuario registrado exitosamente")
-                        st.info("🔐 Ahora puedes iniciar sesión con tu email y contraseña")
-                        st.session_state["show_login"] = True
-                        st.rerun()
-                        
+                    query("""
+                        INSERT INTO auth_user (email, password_hash, rol, sede_id, created_at)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (
+                        email, password_hash, rol, sede_id, datetime.now()
+                    ))
+                    
+                    st.success("✅ Usuario registrado exitosamente")
+                    st.info("🔐 Ahora puedes iniciar sesión con tu email y contraseña")
+                    st.session_state["show_login"] = True
+                    st.rerun()
+
                 except Exception as e:
                     st.error(f"❌ Error al registrar usuario: {e}")
 
-# Header
-left, right = st.columns([0.8, 0.2])
-with left:
-    st.title("🏋️ Gym Manager — Sistema de Gestión")
-with right:
-    if st.session_state.get("user"):
-        if st.button("🚪 Salir", type="primary", help="Cerrar sesión"):
-            try:
-                from lib.auth import logout
-                logout()
-            except Exception:
-                for k in ("user", "permissions", "jwt", "auth_user", "session_id", "col_index"):
-                    st.session_state.pop(k, None)
-            st.success("Sesión cerrada.")
-            st.rerun()
-
-# Control de vistas
-if not st.session_state.get("user"):
-    # Usuario no autenticado - mostrar opciones de login/registro
-    
-    # Pestañas para Login y Registro
-    tab_login, tab_register = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
-    
-    with tab_login:
-        st.header("Acceso al Sistema")
-        login_form()
-        
-        # Información adicional para el login
-        st.divider()
-        st.info("""
-        **👥 Tipos de Usuario:**
-        - **Administrador**: Acceso completo al sistema
-        - **Recepcionista**: Control de acceso, ventas, reservas
-        - **Entrenador**: Gestión de clases y entrenamientos
-        - **Socio**: Reservas de clases y consulta de información personal
-        """)
-    
-    with tab_register:
-        st.header("Crear Nueva Cuenta")
-        
-        # Información sobre el registro
-        st.info("""
-        **🎯 Beneficios de Registrarse:**
-        - Reserva de clases online
-        - Seguimiento de tu progreso
-        - Historial de pagos y membresías
-        - Notificaciones importantes
-        - Acceso a promociones exclusivas
-        """)
-        
-        registro_form()
+# Llamada a la función de registro
+registro_form()
         
         st.divider()
         st.caption("""
